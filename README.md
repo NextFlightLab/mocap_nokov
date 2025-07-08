@@ -8,7 +8,14 @@
 ![galactic](https://github.com/NOKOV-MOCAP/mocap_nokov/actions/workflows/galactic.yml/badge.svg)
 
 # mocap_nokov
-ROS2 nodes for working with the Nokov motion capture system
+This is a modified version of the official ROS 2 node for the NOKOV Motion Capture System, featuring bug fixes and performance optimizations.
+
+
+## ⚠️ Important Recommendation
+
+For maximum stability, we strongly recommend running this node on the same host machine that runs the XINGYING motion capture software. This ensures reliable ROS 2 topic reception on other onboard computers or hosts.
+
+
 
 ## Usage
 
@@ -23,7 +30,7 @@ sudo apt install -y \
      ros-$ROS_DISTRO-rclcpp
 source /opt/ros/$ROS_DISTRO/setup.bash
 cd ~/ros2_ws/src
-git clone -b ros2 https://github.com/NOKOV-MOCAP/mocap_nokov.git
+git clone -b ros2 https://github.com/NextFlightLab/mocap_nokov.git
 cd ~/ros2_ws
 colcon build --packages-select mocap_nokov --symlink-install
 source install/setup.bash

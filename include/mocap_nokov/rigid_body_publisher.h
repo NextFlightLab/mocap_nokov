@@ -3,6 +3,9 @@
 
 #include <map>
 #include <memory>
+#include <vector>
+#include <numeric>
+#include <algorithm>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/publisher.hpp>
@@ -34,7 +37,11 @@ private:
 
   bool useNewCoordinates;
 
-  double timeDifference;	//For syncing nokov clock to ROS clock
+  double timeDifference = 0.0;  // For syncing nokov clock to ROS clock
+  bool isClockSyncInitialized = false;  // Track if initial sync is done
+  static constexpr size_t SYNC_SAMPLE_COUNT = 10;  // Number of samples for initial sync
+  std::vector<double> syncSamples;  // Store sync samples for better initial estimation
+  static constexpr double SYNC_IMPROVEMENT_THRESHOLD = 0.001;  // Minimum improvement to update sync (1ms)
 
   tf2_ros::TransformBroadcaster tfPublisher;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr posePublisher;

@@ -9,7 +9,7 @@
 // <copyright file="Utility.h" company="Nokov">
 //     Copyright (c) Nokov. All rights reserved.
 // </copyright>
-// <summary>¸¨Öú¹¦ÄÜÍ·ÎÄ¼þ£¬Ìá¹©ËÙ¶È£¬¼ÓËÙ¶ÈµÄÍâ²¿¼ÆËãÖ§³Ö</summary>
+// <summary>ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í·ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½á¹©ï¿½Ù¶È£ï¿½ï¿½ï¿½ï¿½Ù¶Èµï¿½ï¿½â²¿ï¿½ï¿½ï¿½ï¿½Ö§ï¿½ï¿½</summary>
 // ***********************************************************************
 
 #pragma once
@@ -24,9 +24,9 @@
 #define FrameFactor 3  // 3,5,7
 #define FPS 60
 
-#define IN                                               //Èë²Î																			
-#define OUT                                              //³ö²Î																						
-#define IN_OUT                                           //Èë³ö²Î
+#define IN                                               //ï¿½ï¿½ï¿½																			
+#define OUT                                              //ï¿½ï¿½ï¿½ï¿½																						
+#define IN_OUT                                           //ï¿½ï¿½ï¿½ï¿½ï¿½
 
 struct Point
 {
@@ -36,7 +36,7 @@ struct Point
 	std::string name;
 };
 
-struct Vel      //¶¨ÒåËÙ¶È
+struct Vel      //ï¿½ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½
 {
 	double Vx;
 	double Vy;
@@ -56,7 +56,7 @@ struct Vel      //¶¨ÒåËÙ¶È
 	}
 };
 
-struct Accel      //¶¨Òå¼ÓËÙ¶È
+struct Accel      //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½
 {
 	double Ax;
 	double Ay;
@@ -76,7 +76,7 @@ struct Accel      //¶¨Òå¼ÓËÙ¶È
 	}
 };
 
-// ·â×°µÄ¼ÆËãÀà£¬¿ÉÅÉÉú×Ô´Ë»ùÀàÊµÏÖ×Ô¶¨Òå¼ÆËã·½Ê½
+// ï¿½ï¿½×°ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½à£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô´Ë»ï¿½ï¿½ï¿½Êµï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½ã·½Ê½
 template<class T>
 class CalculateMethod
 {
@@ -130,7 +130,7 @@ protected:
 	}
 };
 
-// Á½Ö¡¼ÆËã·¨£¬´ÓµÚ¶þÖ¡ÆðÊµÊ±¼ÆËã
+// ï¿½ï¿½Ö¡ï¿½ï¿½ï¿½ã·¨ï¿½ï¿½ï¿½ÓµÚ¶ï¿½Ö¡ï¿½ï¿½ÊµÊ±ï¿½ï¿½ï¿½ï¿½
 class CalculateVelocityByTwoFrame : public CalculateMethod<Vel>
 {
 public:
@@ -166,7 +166,7 @@ protected:
 	}
 };
 
-// »¬¶¯Ö¡Êý×é£¬´æ´¢´ý¼ÆËãµÄÊý¾Ý£¬±£ÁôÔ­Ê¼Ö¸ÕëÀàÐÍ
+// ï¿½ï¿½ï¿½ï¿½Ö¡ï¿½ï¿½ï¿½é£¬ï¿½æ´¢ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ï¿½ï¿½Ô­Ê¼Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 class SlideFrameArray
 {
 public:
@@ -239,7 +239,7 @@ private:
 			retArray[index] = *itor;
 		}
 
-		// Ïòºó»¬¶¯Ò»¸ñ
+		// ï¿½ï¿½ó»¬¶ï¿½Ò»ï¿½ï¿½
 		_list.pop_front();
 
 		return true;

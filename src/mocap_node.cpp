@@ -1,6 +1,8 @@
 // STL includes
 #include <chrono>
 #include <thread>
+#include <atomic>
+#include <condition_variable>
 
 // Local includes
 #include <mocap_nokov/mocap_config.h>
@@ -19,62 +21,12 @@
 
 namespace mocap_nokov
 {
-  std::mutex mtx;
-  DataModel frameObjData;
-
-  void DataHandler(sFrameOfMocapData* pFrameOfData, void* pUserData)
-  {
-      if (nullptr == pFrameOfData)
-          return;
-
-      // Store the frame
-      std::lock_guard<std::mutex> lck (mtx);
-
-      int nmaker = (pFrameOfData->nOtherMarkers < MAX_MARKERS)?pFrameOfData->nOtherMarkers:MAX_MARKERS;
-
-      frameObjData.frameNumber = pFrameOfData->iFrame;
-      frameObjData.dataFrame.markerSets.resize(pFrameOfData->nMarkerSets);
-      frameObjData.dataFrame.rigidBodies.resize(pFrameOfData->nRigidBodies);
-      frameObjData.dataFrame.otherMarkers.resize(pFrameOfData->nOtherMarkers);
-      frameObjData.dataFrame.latency = pFrameOfData->fLatency;
-      
-      for(int i = 0; i< nmaker; ++i)
-      {   
-        frameObjData.dataFrame.otherMarkers.push_back(
-          Marker{pFrameOfData->OtherMarkers[i][0] * 0.001f,
-                 pFrameOfData->OtherMarkers[i][1] * 0.001f,
-                 pFrameOfData->OtherMarkers[i][2] * 0.001f}
-        );        
-      }
-
-      for(int i = 0; i< pFrameOfData->nRigidBodies; ++i)
-      {
-          RigidBody body;
-          body.bodyId = pFrameOfData->RigidBodies[i].ID;
-          body.iFrame = pFrameOfData->iFrame;
-          body.isTrackingValid = true;
-          body.pose.position = {pFrameOfData->RigidBodies[i].x * 0.001f, 
-                                pFrameOfData->RigidBodies[i].y * 0.001f,
-                                pFrameOfData->RigidBodies[i].z * 0.001f};
-
-          body.pose.orientation = {pFrameOfData->RigidBodies[i].qx, 
-                                  pFrameOfData->RigidBodies[i].qy,
-                                  pFrameOfData->RigidBodies[i].qz,
-                                  pFrameOfData->RigidBodies[i].qw};
-
-          frameObjData.dataFrame.rigidBodies.push_back(body);
-      }
-  }
-
-  const DataModel& GetCurrentFrame()
-  {
-    static DataModel frame;
-    {
-        std::lock_guard<std::mutex> lck (mtx);
-        frame = frameObjData;
-    }
-    return frame;
-  }
+  // Forward declaration
+  class NokovRosBridge;
+  
+  // Global pointer to bridge instance for callback access
+  static NokovRosBridge* g_bridgeInstance = nullptr;
+  static std::mutex g_callbackMutex;
 
   class NokovRosBridge
   {
@@ -86,16 +38,27 @@ namespace mocap_nokov
         node(node),
         clock(node->get_clock()),
         serverDescription(serverDescr),
-        publisherConfigurations(pubConfigs)
+        publisherConfigurations(pubConfigs),
+        lastProcessedFrame(-1),
+        isShutdownRequested(false)
     {
+      g_bridgeInstance = this;
+    }
 
+    ~NokovRosBridge() {
+      g_bridgeInstance = nullptr;
     }
 
     void initialize()
     {
-      // Create client
+      // Create client with optimized settings
       sdkClientPtr.reset(new NokovSDKClient());
-      sdkClientPtr->SetDataCallback(DataHandler);
+      
+      // Set high verbosity for debugging performance issues (can be reduced later)
+      sdkClientPtr->SetVerbosityLevel(Verbosity_Warning);
+      
+      // Set callback before initialization
+      sdkClientPtr->SetDataCallback(StaticDataHandler);
 
       unsigned char sdkVersion[4] = {0};
       sdkClientPtr->NokovSDKVersion(sdkVersion);    
@@ -114,27 +77,119 @@ namespace mocap_nokov
           ver, publisherConfigurations));
         
       RCLCPP_INFO(node->get_logger(), "Initialization complete");
-    };
+    }
 
     void run()
     {
-      while (rclcpp::ok())
+      // Event-driven architecture: just wait for shutdown signal
+      RCLCPP_INFO(node->get_logger(), "Event-driven publishing started. Data will be published on callback.");
+      
+      while (rclcpp::ok() && !isShutdownRequested.load()) {
+        // Sleep and check for shutdown periodically
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        rclcpp::spin_some(node);
+      }
+      
+      RCLCPP_INFO(node->get_logger(), "Publishing stopped.");
+    }
+
+    void shutdown() {
+      isShutdownRequested.store(true);
+    }
+
+    // Static callback for SDK
+    static void StaticDataHandler(sFrameOfMocapData* pFrameOfData, void* pUserData)
+    {
+      std::lock_guard<std::mutex> lock(g_callbackMutex);
+      if (g_bridgeInstance != nullptr) {
+        g_bridgeInstance->DataHandler(pFrameOfData, pUserData);
+      }
+    }
+
+  private:
+    // Instance method for handling data
+    void DataHandler(sFrameOfMocapData* pFrameOfData, void* pUserData)
+    {
+      if (nullptr == pFrameOfData) {
+        return;
+      }
+
+      // Skip duplicate frames with atomic operation (lockless)
+      int currentFrame = pFrameOfData->iFrame;
+      int expectedFrame = lastProcessedFrame.load();
+      if (currentFrame == expectedFrame) {
+        return;
+      }
+      
+      // Try to update lastProcessedFrame atomically
+      if (!lastProcessedFrame.compare_exchange_weak(expectedFrame, currentFrame)) {
+        // Another thread is processing the same or newer frame
+        return;
+      }
+
+      // Convert SDK data to our format efficiently - minimize allocations
+      std::vector<RigidBody> rigidBodies;
+      rigidBodies.reserve(pFrameOfData->nRigidBodies);
+
+      // Batch process rigid bodies for better cache locality
+      const double timestamp = pFrameOfData->iTimeStamp / 1000.0;
+      for(int i = 0; i < pFrameOfData->nRigidBodies; ++i)
       {
-        static int preIFrame = 0;
+        const auto& sdkBody = pFrameOfData->RigidBodies[i];
+        
+        // Create body with move semantics
+        rigidBodies.emplace_back();
+        RigidBody& body = rigidBodies.back();
+        
+        body.bodyId = sdkBody.ID;
+        body.iFrame = currentFrame;
+        body.trackTimestamp = timestamp;
 
-        const auto frame = GetCurrentFrame();
+        
+        // Direct assignment (no intermediate objects)
+        body.pose.position.x = sdkBody.x * 0.001f;
+        body.pose.position.y = sdkBody.y * 0.001f;
+        body.pose.position.z = sdkBody.z * 0.001f;
+        body.pose.orientation.x = sdkBody.qx;
+        body.pose.orientation.y = sdkBody.qy;
+        body.pose.orientation.z = sdkBody.qz;
+        body.pose.orientation.w = sdkBody.qw;
+        
+        body.isTrackingValid = !(body.pose.position.x > 9999);
 
-        if (frame.frameNumber != preIFrame)
-        {
-          preIFrame = frame.frameNumber ;
+      }
 
-          const rclcpp::Time time = clock->now();
+      // Get timestamp once for all publications
+      const rclcpp::Time currentTime = clock->now();
+      
+      // Publish immediately (this is already optimized to be fast)
+      publishDispatcherPtr->publish(currentTime, rigidBodies, node->get_logger());
+      
+      // Lightweight performance tracking
+      static std::atomic<int> frameCounter{0};
+      static auto lastStatsTime = std::chrono::steady_clock::now();
+      
 
-          publishDispatcherPtr->publish(time, frame.dataFrame.rigidBodies, node->get_logger());
+      int currentCount = frameCounter.fetch_add(1) + 1;
+      
+      // Log stats every 5 seconds
+      auto now = std::chrono::steady_clock::now();
+      if (std::chrono::duration_cast<std::chrono::seconds>(now - lastStatsTime).count() >= 5) {
+        double fps = currentCount / 5.0;
+        
+        if (fps < 90.0) {  // Warn if significantly below 100Hz
+          RCLCPP_WARN(node->get_logger(), 
+                     "%.1f FPS, (Frame: %d)", 
+                     fps, currentFrame);
+        } else {
+          RCLCPP_DEBUG(node->get_logger(), 
+                      "%.1f FPS, (Frame: %d)", 
+                      fps, currentFrame);
         }
-
-        // If we processed some data, take a short break
-        //usleep( 10 );
+        
+        // Reset counters
+        frameCounter.store(0);
+        lastStatsTime = now;
       }
     }
 
@@ -145,6 +200,9 @@ namespace mocap_nokov
     PublisherConfigurations publisherConfigurations;
     std::unique_ptr<RigidBodyPublishDispatcher> publishDispatcherPtr;
     std::unique_ptr<NokovSDKClient> sdkClientPtr;
+    
+    std::atomic<int> lastProcessedFrame;
+    std::atomic<bool> isShutdownRequested;
   };
 
 } // namespace

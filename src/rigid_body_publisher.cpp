@@ -4,6 +4,7 @@
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/LinearMath/Vector3.h>
 #include <tf2/utils.h>
+#include <cmath>
 
 namespace mocap_nokov
 {
@@ -77,27 +78,56 @@ void RigidBodyPublisher::publish(rclcpp::Time const& time, RigidBody const& body
 
   double curTimeDifference = time.seconds() - body.trackTimestamp;
 
-  // If timeDifference is 0 it has not yet been set
-  if (timeDifference == 0){
-    RCLCPP_INFO(logger, "Initial clock sync: %.0f seconds", curTimeDifference);
-    timeDifference = curTimeDifference;
+  // Improved clock synchronization logic
+  if (!isClockSyncInitialized) {
+    // Collect samples for initial sync estimation
+    syncSamples.push_back(curTimeDifference);
+    
+    if (syncSamples.size() >= SYNC_SAMPLE_COUNT) {
+      // Use robust statistics: median for outlier resistance + mean of central values for precision
+      std::vector<double> sortedSamples = syncSamples;
+      std::sort(sortedSamples.begin(), sortedSamples.end());
+      
+      // Use trimmed mean: remove top/bottom 20% and average the rest
+      size_t trimCount = syncSamples.size() / 5; // Remove 20%
+      size_t startIdx = trimCount;
+      size_t endIdx = syncSamples.size() - trimCount;
+      
+      double sum = 0.0;
+      for (size_t i = startIdx; i < endIdx; ++i) {
+        sum += sortedSamples[i];
+      }
+      timeDifference = sum / (endIdx - startIdx);
+      
+      RCLCPP_INFO(logger, "Initial clock sync established: %.5f ms (trimmed mean of %zu samples)", 
+                  timeDifference * 1000, syncSamples.size());
+      isClockSyncInitialized = true;
+      syncSamples.clear(); // Free memory
+    } else {
+      // Use current sample as temporary sync while collecting
+      timeDifference = curTimeDifference;
+    }
+  } else {
+    // Adaptive sync improvement with absolute threshold (handles bidirectional drift)
+    double timeDrift = std::abs(timeDifference - curTimeDifference);
+    if (timeDrift > SYNC_IMPROVEMENT_THRESHOLD) {
+      RCLCPP_DEBUG(logger, "Updating clock sync: drift %.5f ms detected", timeDrift * 1000);
+      timeDifference = curTimeDifference;
+    }
   }
 
-  // Clock sync can be improved if the current timeDifference is the lowest seen
-  if (curTimeDifference < timeDifference){
-    RCLCPP_INFO(logger, "Improving clock sync by %.5f seconds", timeDifference - curTimeDifference);
-    timeDifference = curTimeDifference;
-  }
-
-  // Calculate correct timestamp using time difference
+  // Calculate corrected timestamp using improved sync
   double corStamp = body.trackTimestamp + timeDifference;
-
-  pose.header.stamp = rclcpp::Time((int)corStamp, (corStamp-floor(corStamp)) * 1000000000 );
+  
+  // More robust timestamp conversion
+  int32_t sec = static_cast<int32_t>(std::floor(corStamp));
+  uint32_t nanosec = static_cast<uint32_t>((corStamp - sec) * 1e9);
+  pose.header.stamp = rclcpp::Time(sec, nanosec);
 
   if (config.publishPose)
   {
-    //pose.header.frame_id = config.parentFrameId;
-    pose.header.frame_id = std::to_string(body.iFrame);
+    pose.header.frame_id = config.parentFrameId;
+    // pose.header.frame_id = std::to_string(body.iFrame);
     posePublisher->publish(pose);
   }
 

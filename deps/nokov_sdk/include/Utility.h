@@ -9,7 +9,7 @@
 // <copyright file="Utility.h" company="Nokov">
 //     Copyright (c) Nokov. All rights reserved.
 // </copyright>
-// <summary>��������ͷ�ļ����ṩ�ٶȣ����ٶȵ��ⲿ����֧��</summary>
+// <summary>点位滑动窗口及速度、加速度计算工具</summary>
 // ***********************************************************************
 
 #pragma once
@@ -24,9 +24,9 @@
 #define FrameFactor 3  // 3,5,7
 #define FPS 60
 
-#define IN                                               //���																			
-#define OUT                                              //����																						
-#define IN_OUT                                           //�����
+#define IN                                               // 输入
+#define OUT                                              // 输出
+#define IN_OUT                                           // 输入输出
 
 struct Point
 {
@@ -36,7 +36,7 @@ struct Point
 	std::string name;
 };
 
-struct Vel      //�����ٶ�
+struct Vel      // 速度
 {
 	double Vx;
 	double Vy;
@@ -56,7 +56,7 @@ struct Vel      //�����ٶ�
 	}
 };
 
-struct Accel      //������ٶ�
+struct Accel      // 加速度
 {
 	double Ax;
 	double Ay;
@@ -76,7 +76,7 @@ struct Accel      //������ٶ�
 	}
 };
 
-// ��װ�ļ����࣬�������Դ˻���ʵ���Զ�����㷽ʽ
+// 计算方法基类
 template<class T>
 class CalculateMethod
 {
@@ -130,7 +130,7 @@ protected:
 	}
 };
 
-// ��֡���㷨���ӵڶ�֡��ʵʱ����
+// 使用相邻两帧计算速度
 class CalculateVelocityByTwoFrame : public CalculateMethod<Vel>
 {
 public:
@@ -166,7 +166,7 @@ protected:
 	}
 };
 
-// ����֡���飬�洢����������ݣ�����ԭʼָ������
+// 滑动帧数组，用于缓存点位并按指定帧数计算运动数据
 class SlideFrameArray
 {
 public:
@@ -239,7 +239,7 @@ private:
 			retArray[index] = *itor;
 		}
 
-		// ��󻬶�һ��
+		// 移除最早的一帧
 		_list.pop_front();
 
 		return true;
